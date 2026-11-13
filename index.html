@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Galaxy10 model comparison</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cellipse cx=%2216%22 cy=%2216%22 rx=%2213%22 ry=%226%22 transform=%22rotate(-30 16 16)%22 fill=%22none%22 stroke=%22%23B59AF2%22 stroke-width=%222%22/%3E%3Ccircle cx=%2216%22 cy=%2216%22 r=%223.5%22 fill=%22%23E6ECF3%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0F1B2D;
+    --panel: #15233A;
+    --line: #253650;
+    --text: #E6ECF3;
+    --muted: #93A3B9;
+    --faint: #5E708A;
+    --baseline: #7DB4E8;
+    --vgg: #E8B860;
+    --dinov2: #B59AF2;
+    --detr: #62D2B0;
+    --truth: #F28B82;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--ink);
+    color: var(--text);
+    font-family: "Archivo", system-ui, sans-serif;
+    font-variation-settings: "wdth" 100;
+    font-size: 16px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
+
+  .page { max-width: 1440px; margin: 0 auto; padding: 28px 24px 64px; }
+
+  /* Sidebar of preloaded demo images + the main comparison */
+  .layout { display: grid; grid-template-columns: 188px minmax(0, 1fr); gap: 36px; align-items: start; }
+  .presets { position: sticky; top: 20px; padding-top: 40px; }
+  .presets h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; font-variation-settings: "wdth" 108; }
+  .presets p { margin: 0 0 14px; font-size: 13px; color: var(--faint); line-height: 1.4; }
+  .preset-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .preset {
+    display: grid; grid-template-columns: 52px 1fr; gap: 10px; align-items: center; width: 100%;
+    padding: 6px; border: 1px solid transparent; border-radius: 6px; background: transparent;
+    cursor: pointer; text-align: left;
+  }
+  .preset:hover { background: var(--panel); }
+  .preset[aria-pressed="true"] { background: var(--panel); border-color: var(--muted); }
+  .preset img { width: 52px; height: 52px; border-radius: 4px; object-fit: cover; display: block; background: #0A1424; }
+  .preset .pname { font-size: 14px; line-height: 1.3; color: var(--text); overflow-wrap: anywhere; }
+  .preset .pguess { display: block; font-size: 12px; color: var(--faint); margin-top: 2px; }
+  .presets .none { font-size: 13px; color: var(--faint); }
+
+  header.top {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 20px; border-bottom: 1px solid var(--line);
+  }
+  header.top h1 {
+    margin: 0; font-size: 18px; font-weight: 600; letter-spacing: 0.01em;
+    font-variation-settings: "wdth" 115;
+  }
+  .load-status { color: var(--muted); font-size: 14px; display: flex; gap: 14px; flex-wrap: wrap; }
+  .load-status span { display: inline-flex; align-items: center; gap: 6px; }
+  .load-status i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .load-status .off { color: var(--faint); text-decoration: line-through; }
+  .load-status .off i { background: transparent !important; border: 1px solid var(--faint); }
+
+  /* Hero: the galaxy plate and the verdict */
+  .hero {
+    display: grid; grid-template-columns: minmax(280px, 420px) 1fr; gap: 48px;
+    align-items: center; padding: 40px 0 44px;
+  }
+  .plate {
+    position: relative; aspect-ratio: 1; width: 100%;
+    border: 1px dashed var(--line); border-radius: 6px; background: #0A1424;
+    display: grid; place-items: center; cursor: pointer; overflow: hidden;
+    transition: border-color .15s;
+  }
+  .plate.has-image { border-style: solid; cursor: default; }
+  .plate.dragging { border-color: var(--text); }
+  .plate img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; image-rendering: auto; }
+  .plate .empty { text-align: center; padding: 24px; color: var(--muted); max-width: 26ch; }
+  .plate .empty strong { display: block; color: var(--text); font-weight: 500; font-size: 18px; margin-bottom: 4px; }
+  .box {
+    position: absolute; border: 1.5px solid; border-radius: 2px;
+    box-shadow: 0 0 0 1px rgba(10,20,36,.6);
+  }
+  .plate.busy::after {
+    content: ""; position: absolute; inset: 0; background: rgba(15,27,45,.55);
+  }
+  .plate .spinner {
+    position: absolute; z-index: 2; width: 36px; height: 36px; border-radius: 50%;
+    border: 2px solid rgba(230,236,243,.25); border-top-color: var(--text);
+    animation: spin .8s linear infinite; display: none;
+  }
+  .plate.busy .spinner { display: block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .plate-actions { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+  .btn {
+    background: transparent; border: 1px solid var(--line); border-radius: 4px;
+    padding: 8px 14px; cursor: pointer; font-size: 14px;
+  }
+  .btn:hover { border-color: var(--muted); }
+  .btn.primary { background: var(--text); color: var(--ink); border-color: var(--text); font-weight: 500; }
+  .btn.primary:hover { background: #fff; }
+  .plate-note { color: var(--faint); font-size: 13px; margin: 10px 0 0; }
+  .plate-note b { font-weight: 500; }
+  .run-status { color: var(--faint); font-size: 13px; margin: 10px 0 0; max-width: 46ch; line-height: 1.45; }
+  .run-status.active { color: var(--muted); }
+  .plate-note span { display: block; }
+
+  .verdict h2 {
+    margin: 0 0 6px; font-weight: 600; line-height: 1.08;
+    font-size: clamp(30px, 4.2vw, 50px);
+    font-variation-settings: "wdth" 112;
+    letter-spacing: -0.01em; max-width: 18ch; text-wrap: balance;
+  }
+  .verdict .sub { color: var(--muted); margin: 0 0 28px; max-width: 52ch; }
+  .verdict .sub .truth { color: var(--truth); }
+
+  .votes { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+  .votes li {
+    display: grid; grid-template-columns: 10px 12rem 1fr auto; gap: 14px; align-items: baseline;
+    padding: 11px 0; border-bottom: 1px solid var(--line);
+  }
+  .votes .dot { width: 10px; height: 10px; border-radius: 50%; align-self: start; margin-top: 8px; }
+  .votes .model { color: var(--muted); font-size: 15px; }
+  .votes .guess { font-size: 18px; font-weight: 500; }
+  .votes .conf { font-size: 18px; color: var(--muted); }
+  .votes li.missing .guess, .votes li.missing .conf { color: var(--faint); font-weight: 400; font-size: 15px; }
+  .votes li.right .guess::after { content: " ✓"; color: var(--truth); }
+
+  /* The matrix: one row per class, one column per model */
+  .matrix-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+  .matrix-head h3 { margin: 0; font-size: 20px; font-weight: 600; font-variation-settings: "wdth" 108; }
+  .matrix-head p { margin: 0; color: var(--muted); font-size: 14px; max-width: 60ch; }
+
+  .matrix-scroll { overflow-x: auto; }
+  table.matrix { width: 100%; min-width: 1120px; border-collapse: collapse; table-layout: fixed; }
+  .matrix thead th:first-child { width: 13.5rem; }
+  .matrix th, .matrix td { padding: 0; text-align: left; vertical-align: middle; }
+  .matrix thead th {
+    font-weight: 500; font-size: 15px; padding: 0 12px 12px; border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .matrix thead th:first-child { padding-left: 0; }
+  .matrix thead th .swatch { display: block; height: 3px; width: 28px; border-radius: 2px; margin-bottom: 8px; }
+  .matrix thead th .detail { display: block; color: var(--faint); font-size: 12.5px; font-weight: 400; line-height: 1.35; margin-top: 2px; max-width: 26ch; }
+  .matrix tbody th {
+    font-weight: 400; color: var(--muted); font-size: 15px; white-space: nowrap;
+    padding: 0 16px 0 0; width: 13.5rem;
+  }
+  .matrix tbody tr { border-bottom: 1px solid rgba(37,54,80,.6); }
+  .matrix tbody tr.truth th { color: var(--truth); }
+  .matrix tbody tr.truth th::after { content: " (true label)"; font-size: 12.5px; opacity: .8; }
+  .matrix tbody th, .matrix thead th:first-child { position: sticky; left: 0; background: var(--ink); z-index: 1; }
+  .matrix td { padding: 9px 12px; }
+  .cell { display: grid; grid-template-columns: 1fr 3.4rem; align-items: center; gap: 10px; }
+  .track { height: 14px; background: rgba(37,54,80,.55); border-radius: 2px; overflow: hidden; }
+  .fill { height: 100%; width: 0; border-radius: 2px; opacity: .38; transition: width .5s cubic-bezier(.2,.7,.2,1); }
+  .pct { text-align: right; font-size: 14px; color: var(--faint); }
+  td.top .fill { opacity: 1; }
+  td.top .pct { color: var(--text); font-weight: 500; }
+  td.off { color: var(--faint); font-size: 13px; }
+  .matrix tbody tr:first-child td.off { padding-top: 14px; }
+
+  .empty-state { color: var(--faint); padding: 18px 0; }
+  .error {
+    margin: 0 0 24px; padding: 12px 14px; border: 1px solid #6B3A44; border-radius: 4px; color: #F5C2C7; display: none;
+  }
+
+  footer { margin-top: 40px; color: var(--faint); font-size: 13px; max-width: 80ch; }
+
+  @media (max-width: 1080px) {
+    .layout { grid-template-columns: minmax(0, 1fr); gap: 0; }
+    .presets { min-width: 0; }
+    .presets { position: static; padding-top: 24px; }
+    .preset-list { grid-auto-flow: column; grid-auto-columns: 168px; overflow-x: auto; padding-bottom: 6px; }
+  }
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; gap: 28px; padding-top: 28px; }
+    .plate-wrap { max-width: 420px; }
+    .votes li { grid-template-columns: 10px 7.5rem 1fr auto; gap: 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .fill { transition: none; }
+    .plate .spinner { animation-duration: 2.4s; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1>Galaxy10 model comparison</h1>
+    <div class="load-status" id="loadStatus" aria-live="polite"></div>
+  </header>
+
+  <div class="layout">
+  <aside class="presets" aria-labelledby="presetsTitle">
+    <h2 id="presetsTitle">Demo images</h2>
+    <p>Click one to run it through every model. You can still drop in your own.</p>
+    <ul class="preset-list" id="presetList"></ul>
+  </aside>
+
+  <main>
+  <section class="hero">
+    <div class="plate-wrap">
+      <div class="plate" id="plate" role="button" tabindex="0" aria-label="Choose a galaxy image to classify">
+        <div class="empty" id="plateEmpty">
+          <strong>Choose a galaxy image</strong>
+          or drop one here. Square cutouts centered on the galaxy work best, like the 256×256 Galaxy10 images.
+        </div>
+        <img id="plateImg" alt="" hidden>
+        <div id="boxes" aria-hidden="true"></div>
+        <div class="spinner" aria-hidden="true"></div>
+      </div>
+      <div class="plate-actions">
+        <button class="btn primary" id="chooseBtn" type="button">Choose image</button>
+        <button class="btn" id="sampleBtn" type="button" hidden>Random Galaxy10 image</button>
+      </div>
+      <p class="plate-note" id="plateNote" hidden></p>
+      <p class="run-status" id="runStatus" aria-live="polite">Your first upload downloads the five models (about 210 MB) into this browser. After that, each image takes a few seconds.</p>
+      <input type="file" id="fileInput" accept="image/*" hidden>
+    </div>
+
+    <div class="verdict">
+      <h2 id="headline">Every model, one galaxy.</h2>
+      <p class="sub" id="subline">Upload an image and every model classifies it into one of the ten Galaxy10 DECaLS classes. Their full confidence distributions appear below.</p>
+      <ul class="votes" id="votes"></ul>
+    </div>
+  </section>
+
+  <div class="error" id="error" role="alert"></div>
+
+  <section>
+    <div class="matrix-head">
+      <h3>Confidence distributions</h3>
+      <p>Each column is one model's probabilities across all ten classes, adding to 100%. The solid bar is that model's prediction.</p>
+    </div>
+    <div class="matrix-scroll">
+      <table class="matrix" id="matrix"></table>
+    </div>
+  </section>
+
+  <footer>
+    Everything runs in your browser with ONNX Runtime Web: uploads never leave your computer. The demo images on the left were classified ahead of time with the original PyTorch models. Every upload is center-cropped to a square and resized to 256×256 first, so every model sees the same galaxy. Then each model applies the preprocessing it was trained with: the baseline CNN and DINOv2 take raw 256×256 pixels, VGG16 and ResNet-18 take a 224×224 center crop with ImageNet normalization, and GalaxyDETR takes the whole 256×256 image with ImageNet normalization. GalaxyDETR's answer comes from its most confident object query, and its distribution covers the ten classes with the "no galaxy" slot taken out.
+  </footer>
+  </main>
+  </div>
+</div>
+
+<script src="ort/ort.wasm.min.js"></script>
+<script>
+const PRETTY = {
+  disturbed: "Disturbed",
+  merging: "Merging",
+  round_smooth: "Round smooth",
+  in_between_round_smooth: "In-between round smooth",
+  cigar_smooth: "Cigar-shaped smooth",
+  barred_spiral: "Barred spiral",
+  unbarred_tight_spiral: "Unbarred tight spiral",
+  unbarred_loose_spiral: "Unbarred loose spiral",
+  edge_on_no_bulge: "Edge-on, no bulge",
+  edge_on_with_bulge: "Edge-on with bulge",
+};
+const NUM = ["No", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight"];
+const pretty = c => PRETTY[c] || c;
+const color = m => m.color || "#E6ECF3";
+const pct = p => p >= 0.995 ? "100%" : p < 0.005 ? (p > 0 ? "<1%" : "0%") : Math.round(p * 100) + "%";
+
+const $ = id => document.getElementById(id);
+let status = null;
+let requestToken = 0;  // only the newest request (preset click, upload or sample) updates the page
+
+async function init() {
+  try {
+    status = await (await fetch("models/models.json")).json();
+  } catch {
+    showError("Couldn't load models/models.json. If you opened index.html straight from disk, serve the folder instead (python -m http.server) or use the GitHub Pages link.");
+    return;
+  }
+  $("loadStatus").innerHTML = status.models.map(m =>
+    `<span class="${m.loaded ? "" : "off"}" title="${m.loaded ? "Loaded" : esc(m.message || "")}"><i style="background:${color(m)}"></i>${m.name}</span>`
+  ).join("");
+  if (status.has_samples) $("sampleBtn").hidden = false;
+  renderVotes(null);
+  renderMatrix(null);
+  await loadPresets();
+}
+
+// Preloaded demo images: results were computed ahead of time with the PyTorch models, so switching is instant
+let presets = [];
+const presetCache = {};
+
+async function loadPresets() {
+  try {
+    presets = (await (await fetch("presets.json")).json()).presets || [];
+  } catch { presets = []; }
+  if (!presets.length) {
+    $("presetList").innerHTML = '<li class="none">No demo images in this build.</li>';
+    return;
+  }
+  $("presetList").innerHTML = presets.map(p =>
+    `<li><button class="preset" type="button" data-id="${p.id}" aria-pressed="false" title="${esc(p.file)}">
+       <img src="${p.thumb}" alt="">
+       <span><span class="pname">${esc(p.name)}</span><span class="pguess" id="pguess-${p.id}"></span></span>
+     </button></li>`).join("");
+  document.querySelectorAll(".preset").forEach(b => b.onclick = () => selectPreset(b.dataset.id));
+  // label each with the consensus, then open the first one
+  presets.forEach(p => { presetCache[p.id] = p.result; $(`pguess-${p.id}`).textContent = consensus(p.result); });
+  if (!$("plate").classList.contains("has-image")) selectPreset(presets[0].id);
+}
+
+function consensus(data) {
+  const ok = data.results.filter(r => r.status === "ok");
+  if (!ok.length) return "";
+  const counts = {};
+  ok.forEach(r => counts[r.pred] = (counts[r.pred] || 0) + 1);
+  const [lead, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  return `${pretty(lead)}, ${n} of ${ok.length}`;
+}
+
+function markPreset(id) {
+  document.querySelectorAll(".preset").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+}
+
+async function selectPreset(id) {
+  const token = ++requestToken;
+  markPreset(id); showError("");
+  setBusy(false);  // cancels the spinner of any upload this click supersedes
+  showResult(presetCache[id]);
+}
+
+function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function showError(msg) { const e = $("error"); e.textContent = msg; e.style.display = msg ? "block" : "none"; }
+
+function renderVotes(data) {
+  const rows = (data ? data.results : status.models.map(m => ({ ...m, status: m.loaded ? "idle" : "missing" })));
+  $("votes").innerHTML = rows.map(r => {
+    let guess, conf = "";
+    if (r.status === "ok") { guess = pretty(r.pred); conf = pct(r.confidence); }
+    else if (r.status === "missing") guess = "Weights not loaded";
+    else guess = '<span style="color:var(--faint);font-weight:400">Waiting for an image</span>';
+    const right = data && data.true_label && r.status === "ok" && r.pred === data.true_label;
+    return `<li class="${r.status === "missing" ? "missing" : ""} ${right ? "right" : ""}">
+      <span class="dot" style="background:${color(r)}"></span>
+      <span class="model">${r.name}</span>
+      <span class="guess">${guess}</span>
+      <span class="conf">${conf}</span></li>`;
+  }).join("");
+}
+
+function renderMatrix(data) {
+  const classes = status.classes;
+  const models = data ? data.results : status.models.map(m => ({ ...m, status: m.loaded ? "idle" : "missing" }));
+  const truth = data && data.true_label;
+  let html = "<thead><tr><th></th>" + models.map(m =>
+    `<th><span class="swatch" style="background:${color(m)}"></span>${m.name}<span class="detail">${esc(m.detail || "")}</span></th>`
+  ).join("") + "</tr></thead><tbody>";
+  classes.forEach((c, i) => {
+    html += `<tr class="${truth === c ? "truth" : ""}"><th scope="row">${pretty(c)}</th>`;
+    models.forEach(m => {
+      if (m.status === "ok") {
+        const p = m.probs[i], top = i === m.pred_index;
+        html += `<td class="${top ? "top" : ""}"><div class="cell"><div class="track"><div class="fill" data-w="${(p * 100).toFixed(2)}" style="background:${color(m)}"></div></div><span class="pct">${pct(p)}</span></div></td>`;
+      } else if (m.status === "missing") {
+        html += i === 0
+          ? `<td class="off" rowspan="${classes.length}" style="vertical-align:top">${esc(m.message || "Weights not loaded.")}</td>`
+          : "";
+      } else {
+        html += `<td><div class="cell"><div class="track"></div><span class="pct"></span></div></td>`;
+      }
+    });
+    html += "</tr>";
+  });
+  html += "</tbody>";
+  $("matrix").innerHTML = html;
+  // grow the bars on the next frame so the change from the previous image is visible
+  requestAnimationFrame(() => requestAnimationFrame(() =>
+    document.querySelectorAll(".fill").forEach(f => f.style.width = f.dataset.w + "%")));
+}
+
+function renderHeadline(data) {
+  const ok = data.results.filter(r => r.status === "ok");
+  if (!ok.length) {
+    $("headline").textContent = "No models are loaded.";
+    $("subline").textContent = "Copy the weight files into the folders listed in the table, then restart the server.";
+    return;
+  }
+  const counts = {};
+  ok.forEach(r => counts[r.pred] = (counts[r.pred] || 0) + 1);
+  const [lead, n] = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+  const distinct = Object.keys(counts).length;
+  let h;
+  if (n === ok.length && ok.length > 1) h = `${ok.length === 2 ? "Both" : "All " + NUM[ok.length].toLowerCase()} models say ${pretty(lead).toLowerCase()}.`;
+  else if (ok.length === 1) h = `${ok[0].name} says ${pretty(lead).toLowerCase()}.`;
+  else if (distinct === ok.length) h = `The models split ${NUM[ok.length].toLowerCase()} ways.`;
+  else h = `${NUM[n]} of ${NUM[ok.length].toLowerCase()} say ${pretty(lead).toLowerCase()}.`;
+  $("headline").textContent = h;
+
+  let sub = "";
+  if (data.true_label) {
+    const right = ok.filter(r => r.pred === data.true_label).length;
+    sub = `Galaxy10 image #${data.sample_index}. The true label is <span class="truth">${pretty(data.true_label).toLowerCase()}</span>, and ${right === 0 ? "no model" : right === ok.length ? "every model" : NUM[right].toLowerCase() + " of " + NUM[ok.length].toLowerCase()} got it right.`;
+  } else {
+    const mostSure = ok.reduce((a, b) => b.confidence > a.confidence ? b : a);
+    sub = `${data.label ? esc(data.label) + ". " : ""}${mostSure.name} is the most confident, at ${pct(mostSure.confidence)} for ${pretty(mostSure.pred).toLowerCase()}.`;
+  }
+  const missing = data.results.length - ok.length;
+  if (missing) sub += ` ${missing === 1 ? "One model isn't" : NUM[missing] + " models aren't"} loaded.`;
+  $("subline").innerHTML = sub;
+}
+
+function placeBox(data) {
+  const note = $("plateNote");
+  const dets = data.results.filter(r => r.box && r.status === "ok");
+  $("boxes").innerHTML = dets.map(d => {
+    const [x, y, w, h] = d.box;
+    return `<div class="box" style="border-color:${color(d)};left:${x * 100}%;top:${y * 100}%;width:${w * 100}%;height:${h * 100}%"></div>`;
+  }).join("");
+  if (!dets.length) { note.hidden = true; return; }
+  note.innerHTML = dets.map(d =>
+    `<span><b style="color:${color(d)}">${d.name}</b> outlined the galaxy with query ${d.query}, ${pct(d.objectness)} sure a galaxy is there.</span>`).join("");
+  note.hidden = false;
+}
+
+function setBusy(on) {
+  $("plate").classList.toggle("busy", on);
+  $("chooseBtn").disabled = on; $("sampleBtn").disabled = on;
+}
+
+function showResult(data) {
+  const img = $("plateImg");
+  img.src = data.image; img.hidden = false; img.alt = data.true_label ? `Galaxy10 image of a ${pretty(data.true_label)} galaxy` : data.label ? `Demo image: ${data.label}` : "Uploaded galaxy image";
+  $("plateEmpty").hidden = true;
+  $("plate").classList.add("has-image");
+  placeBox(data);
+  renderHeadline(data);
+  renderVotes(data);
+  renderMatrix(data);
+}
+
+async function classify(file) {
+  if (!file) return;
+  if (!file.type.startsWith("image/")) { showError(`${file.name} isn't an image. Choose a PNG or JPEG.`); return; }
+  showError("");
+  const token = ++requestToken;
+  markPreset(null);
+  // show the upload right away while the models run
+  const img = $("plateImg");
+  img.src = URL.createObjectURL(file); img.hidden = false; $("plateEmpty").hidden = true;
+  $("boxes").innerHTML = "";
+  setBusy(true);
+  try {
+    const data = await runAll(file, token);
+    if (token === requestToken) showResult(data);
+  } catch (e) {
+    if (token === requestToken) showError(e.message);
+  } finally {
+    if (token === requestToken) { setBusy(false); setRunStatus(modelsReady() ? "Models loaded. New images run in a few seconds." : ""); }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// In-browser inference with ONNX Runtime Web. Mirrors demo/app.py: center-crop to a square, resize
+// to 256x256, then each model's own preprocessing; GalaxyDETR answers with its most confident query.
+// ---------------------------------------------------------------------------------------------
+ort.env.wasm.wasmPaths = new URL("ort/", location.href).href;
+ort.env.wasm.numThreads = 1;  // GitHub Pages can't enable the cross-origin isolation threads need
+const MEAN = [0.485, 0.456, 0.406], STD = [0.229, 0.224, 0.225];
+const sessions = {};
+
+function setRunStatus(msg) { const el = $("runStatus"); el.textContent = msg; el.classList.toggle("active", !!msg); }
+function modelsReady() { return status.models.every(m => sessions[m.key]); }
+
+async function fetchWithProgress(url, total, onProgress) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Couldn't download ${url} (HTTP ${res.status}).`);
+  if (!res.body) return new Uint8Array(await res.arrayBuffer());
+  const reader = res.body.getReader(), chunks = [];
+  let got = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value); got += value.length; onProgress(got / total);
+  }
+  const buf = new Uint8Array(got);
+  let off = 0; for (const c of chunks) { buf.set(c, off); off += c.length; }
+  return buf;
+}
+
+async function getSession(m, i, n) {
+  if (sessions[m.key]) return sessions[m.key];
+  const mb = (m.bytes / 1e6).toFixed(0);
+  const bytes = await fetchWithProgress(m.file, m.bytes, f =>
+    setRunStatus(`Downloading ${m.name} (${i} of ${n}, ${mb} MB): ${Math.round(f * 100)}%. This only happens on the first upload.`));
+  setRunStatus(`Loading ${m.name} (${i} of ${n})…`);
+  sessions[m.key] = await ort.InferenceSession.create(bytes, { executionProviders: ["wasm"] });
+  return sessions[m.key];
+}
+
+async function decodeImage(file) {
+  try { return await createImageBitmap(file, { imageOrientation: "from-image" }); }
+  catch {
+    const heic = /\.(heic|heif)$/i.test(file.name) || /hei[cf]/i.test(file.type);
+    throw new Error(heic ? "This browser can't open HEIC photos (only Safari can). Convert it to JPEG or PNG first."
+                         : `This browser can't read ${file.name} as an image. Try a PNG or JPEG.`);
+  }
+}
+
+// Same as PIL's Image.resize(..., BICUBIC): separable bicubic (a = -0.5), widened when shrinking
+// (antialiasing), horizontal pass first, rounded to 8 bits in between. A browser canvas resizes
+// with a different filter, which would shift some confidences by a few points.
+function bicubicCoeffs(inSize, outSize) {
+  const scale = inSize / outSize, fscale = Math.max(scale, 1), support = 2 * fscale, ss = 1 / fscale;
+  const f = x => { x = Math.abs(x); const a = -0.5;
+    return x < 1 ? ((a + 2) * x - (a + 3)) * x * x + 1 : x < 2 ? (((x - 5) * x + 8) * x - 4) * a : 0; };
+  const out = [];
+  for (let i = 0; i < outSize; i++) {
+    const center = (i + 0.5) * scale;
+    const lo = Math.max(Math.trunc(center - support + 0.5), 0), hi = Math.min(Math.trunc(center + support + 0.5), inSize);
+    const w = []; let sum = 0;
+    for (let x = lo; x < hi; x++) { const v = f((x - center + 0.5) * ss); w.push(v); sum += v; }
+    out.push({ lo, w: w.map(v => sum ? v / sum : 0) });
+  }
+  return out;
+}
+
+function resizeBicubic(src, inW, inH, outW, outH) {  // RGBA Uint8ClampedArray -> RGBA
+  const cx = bicubicCoeffs(inW, outW), cy = bicubicCoeffs(inH, outH);
+  const tmp = new Uint8ClampedArray(outW * inH * 4);
+  for (let y = 0; y < inH; y++) for (let x = 0; x < outW; x++) {
+    const { lo, w } = cx[x]; let r = 0, g = 0, b = 0;
+    for (let k = 0; k < w.length; k++) { const p = (y * inW + lo + k) * 4; r += src[p] * w[k]; g += src[p + 1] * w[k]; b += src[p + 2] * w[k]; }
+    const q = (y * outW + x) * 4; tmp[q] = Math.round(r); tmp[q + 1] = Math.round(g); tmp[q + 2] = Math.round(b); tmp[q + 3] = 255;
+  }
+  const dst = new Uint8ClampedArray(outW * outH * 4);
+  for (let y = 0; y < outH; y++) {
+    const { lo, w } = cy[y];
+    for (let x = 0; x < outW; x++) {
+      let r = 0, g = 0, b = 0;
+      for (let k = 0; k < w.length; k++) { const p = ((lo + k) * outW + x) * 4; r += tmp[p] * w[k]; g += tmp[p + 1] * w[k]; b += tmp[p + 2] * w[k]; }
+      const q = (y * outW + x) * 4; dst[q] = Math.round(r); dst[q + 1] = Math.round(g); dst[q + 2] = Math.round(b); dst[q + 3] = 255;
+    }
+  }
+  return dst;
+}
+
+function canonical(bmp) {
+  // center-crop to a square at full resolution (any transparent areas become black)
+  const side = Math.min(bmp.width, bmp.height);
+  const src = document.createElement("canvas"); src.width = src.height = side;
+  const sctx = src.getContext("2d", { willReadFrequently: true });
+  sctx.fillStyle = "#000"; sctx.fillRect(0, 0, side, side);
+  sctx.drawImage(bmp, Math.floor((bmp.width - side) / 2), Math.floor((bmp.height - side) / 2), side, side, 0, 0, side, side);
+  const c = document.createElement("canvas"); c.width = c.height = 256;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (side === 256) { ctx.drawImage(src, 0, 0); return c; }
+  const px = resizeBicubic(sctx.getImageData(0, 0, side, side).data, side, side, 256, 256);
+  ctx.putImageData(new ImageData(px, 256, 256), 0, 0);
+  return c;
+}
+
+function toTensor(px, m) {
+  const size = m.crop || 256, off = (256 - size) / 2, plane = size * size;
+  const arr = new Float32Array(3 * plane);
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const p = ((y + off) * 256 + (x + off)) * 4, q = y * size + x;
+    for (let ch = 0; ch < 3; ch++) {
+      const v = px[p + ch] / 255;
+      arr[ch * plane + q] = m.norm === "imagenet" ? (v - MEAN[ch]) / STD[ch] : v;
+    }
+  }
+  return new ort.Tensor("float32", arr, [1, 3, size, size]);
+}
+
+function softmax(a) {
+  const mx = Math.max(...a), e = a.map(v => Math.exp(v - mx)), s = e.reduce((x, y) => x + y, 0);
+  return e.map(v => v / s);
+}
+
+async function runAll(file, token) {
+  const bmp = await decodeImage(file);
+  const canvas = canonical(bmp);
+  const px = canvas.getContext("2d").getImageData(0, 0, 256, 256).data;
+  const results = [], n = status.models.length;
+  for (const [i, m] of status.models.entries()) {
+    const r = { key: m.key, name: m.name, detail: m.detail, color: m.color };
+    try {
+      const sess = await getSession(m, i + 1, n);
+      if (token !== requestToken) throw new Error("superseded");
+      if (modelsReady() || sessions[m.key]) setRunStatus(`Running ${m.name}…`);
+      const out = await sess.run({ input: toTensor(px, m) });
+      let probs;
+      if (m.detr) {
+        const L = out.pred_logits, B = out.pred_boxes, Q = L.dims[1], C = L.dims[2];
+        let best = -1, q = 0, qp = null;
+        for (let k = 0; k < Q; k++) {
+          const p = softmax(Array.from(L.data.slice(k * C, (k + 1) * C)));
+          const top = Math.max(...p.slice(0, C - 1));
+          if (top > best) { best = top; q = k; qp = p; }
+        }
+        const cls = qp.slice(0, C - 1), s = cls.reduce((x, y) => x + y, 0);
+        probs = cls.map(v => v / s);
+        const [cx, cy, w, h] = Array.from(B.data.slice(q * 4, q * 4 + 4));
+        const crop = m.crop || 256, off = (256 - crop) / 2;
+        r.box = [(off + (cx - w / 2) * crop) / 256, (off + (cy - h / 2) * crop) / 256, w * crop / 256, h * crop / 256];
+        r.objectness = 1 - qp[C - 1]; r.query = q;
+      } else {
+        probs = softmax(Array.from(out.logits.data));
+      }
+      const top = probs.indexOf(Math.max(...probs));
+      Object.assign(r, { status: "ok", probs, pred: status.classes[top], pred_index: top, confidence: probs[top] });
+    } catch (e) {
+      if (e.message === "superseded") throw e;
+      r.status = "missing"; r.message = `Couldn't run in this browser: ${e.message}`;
+    }
+    results.push(r);
+  }
+  return { image: canvas.toDataURL("image/png"), classes: status.classes, results };
+}
+
+async function sample() {
+  showError(""); setBusy(true);
+  const token = ++requestToken;
+  markPreset(null);
+  try {
+    const res = await fetch("/api/sample");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `Server error ${res.status}`);
+    if (token === requestToken) showResult(data);
+  } catch (e) { if (token === requestToken) showError(e.message); }
+  finally { if (token === requestToken) setBusy(false); }
+}
+
+const plate = $("plate"), input = $("fileInput");
+$("chooseBtn").onclick = () => input.click();
+$("sampleBtn").onclick = sample;
+plate.onclick = () => { if (!plate.classList.contains("has-image")) input.click(); };
+plate.onkeydown = e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); input.click(); } };
+input.onchange = () => { classify(input.files[0]); input.value = ""; };
+["dragenter", "dragover"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); plate.classList.add("dragging"); }));
+["dragleave", "drop"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === "drop" || e.target === document.documentElement) plate.classList.remove("dragging"); }));
+document.addEventListener("drop", e => classify(e.dataTransfer.files[0]));
+document.addEventListener("paste", e => { const f = [...(e.clipboardData?.files || [])][0]; if (f) classify(f); });
+
+init();
+</script>
+</body>
+</html>

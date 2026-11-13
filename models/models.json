@@ -1,0 +1,82 @@
+{
+ "classes": [
+  "disturbed",
+  "merging",
+  "round_smooth",
+  "in_between_round_smooth",
+  "cigar_smooth",
+  "barred_spiral",
+  "unbarred_tight_spiral",
+  "unbarred_loose_spiral",
+  "edge_on_no_bulge",
+  "edge_on_with_bulge"
+ ],
+ "has_samples": false,
+ "models": [
+  {
+   "key": "baseline",
+   "name": "Baseline CNN",
+   "detail": "5 conv layers, trained from scratch",
+   "color": "#7DB4E8",
+   "file": "models/baseline.onnx",
+   "bytes": 8923038,
+   "crop": null,
+   "norm": "raw",
+   "detr": false,
+   "loaded": true,
+   "message": null
+  },
+  {
+   "key": "vgg",
+   "name": "VGG16",
+   "detail": "ImageNet features, frozen, with a new linear head",
+   "color": "#E8B860",
+   "file": "models/vgg.onnx",
+   "bytes": 59869385,
+   "crop": 224,
+   "norm": "imagenet",
+   "detr": false,
+   "loaded": true,
+   "message": null
+  },
+  {
+   "key": "resnet18",
+   "name": "ResNet-18",
+   "detail": "ImageNet-pretrained, layer3, layer4 and a new 10-class head fine-tuned. Test accuracy 76%",
+   "color": "#E58FD6",
+   "file": "models/resnet18.onnx",
+   "bytes": 44717066,
+   "crop": 224,
+   "norm": "imagenet",
+   "detr": false,
+   "loaded": true,
+   "message": null
+  },
+  {
+   "key": "dinov2",
+   "name": "DINOv2",
+   "detail": "dinov2-small backbone, last 6 transformer blocks and a linear head fine-tuned",
+   "color": "#B59AF2",
+   "file": "models/dinov2.onnx",
+   "bytes": 88456565,
+   "crop": null,
+   "norm": "raw",
+   "detr": false,
+   "loaded": true,
+   "message": null
+  },
+  {
+   "key": "detr",
+   "name": "GalaxyDETR",
+   "detail": "MobileNetV4 small, ImageNet-pretrained, random sampler, whole 256x256 image. Test accuracy 84.1%",
+   "color": "#62D2B0",
+   "file": "models/detr.onnx",
+   "bytes": 7112011,
+   "crop": null,
+   "norm": "imagenet",
+   "detr": true,
+   "loaded": true,
+   "message": null
+  }
+ ]
+}
